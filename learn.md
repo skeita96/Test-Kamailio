@@ -115,11 +115,13 @@ Cet exemple construit un équilibreur de charge dans chaque processus de demande
                   modparam("cfgutils", "lock_set_size", 1) 
                   
                  request_route {
-                  if(!is_method(“INVITE”)) { sl_send_reply(“404”, “Not Found”); 
+                  if(!is_method(“INVITE”)) { 
+                  sl_send_reply(“404”, “Not Found”); 
                   exit;
                   }
                   lock(“balancing”);
-                  $shv(i) = ($shv(i) + 1 ) mod 2; $var(x) = $shv(i); 
+                  $shv(i) = ($shv(i) + 1 ) mod 2; 
+                  $var(x) = $shv(i); 
                   unlock(“balancing”);
                   if($var(x)==1) { 
                   rewritehostport(“1.2.3.4”);
