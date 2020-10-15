@@ -138,12 +138,41 @@ Un bloc de routage est une liste d'actions qui sont exécutées lors d'événeme
 Chaque bloc de routage a un nom réservé, définissant son type, et peut inclure un identifiant au sein du groupe, ses actions se situant entre les accolades :
 
 
+## ROUTING BLOCKS
+
+- route [id] - blocs de routage qui peuvent être exécutés à partir d'autres blocs de routage, ce qui permet d'obtenir une structure modulaire du contenu du fichier de configuration, également appelée sous-route
+- reply_route - Bloc de routage des réponses SIP
+- branch_route[id] - Bloc de routage de la branche sortante du module TM
+- onreply_route[id] - Module TM Bloc d'acheminement des réponses SIP
+- failure_route[id] - Réacheminement de la demande SIP du module TM en cas d'échec de la transaction SIP
+- onsend_route - bloc de routage donnant accès à la demande SIP sortante
+- event_route[id] - nom générique pour définir les blocs de routage exécutés sur divers événements
+Dans la plupart des cas, l'identifiant peut être un nombre quelconque de valeurs de chaîne. Seulement pour le bloc event_route, il doit être une valeur spécifique, définie par le composant exécutant l'itinéraire d'événement.
+Tous les blocs de routage qui prennent un identifiant peuvent être définis plusieurs fois, à condition que chacun ait un identifiant différent dans le même type.
+Pour définir un bloc de routage, il faut qu'au moins une action en fasse partie. Une action peut être une déclaration, une affectation ou une expression logique, une fonction de base ou de module. Les actions sont exécutées dans l'ordre, en sautant sur la base d'instructions conditionnelles ou en boucle (IF, SWITCH ou WHILE) et d'appels à des blocs de sous-routage.
+Chaque type de bloc de routage est expliqué plus en détail dans les sections suivantes.
+
+Il abandonne simplement toutes les demandes SIP reçues, sans prendre aucune mesure pour transmettre ou envoyer une réponse SIP. L'action exit (qui sera expliquée plus loin dans ce livre en détail) termine l'exécution du fichier de configuration. De plus, le bloc request_route ne fait rien avec la demande SIP à moins que vous ne spécifiiez les actions.
+En d'autres termes, il n'y a pas d'action implicite effectuée par Kamailio pour les demandes SIP, chaque traitement que vous voulez effectuer pour une demande SIP doit être explicitement dans le request_route ou dans les sous-routes exécutées à partir de celui-ci.
+Il n'est pas nécessaire que le bloc request_route soit le premier bloc de routage. Les sous-routes exécutées à partir de celui-ci peuvent être définies avant ou après, sans exigence de position (c'est-à-dire qu'en C une fonction doit être déclarée avant de l'appeler, cette contrainte n'existe pas dans le fichier de configuration de Kamailio).
+Le diagramme suivant montre le traitement des demandes SIP du point de vue de Kamailio, illustré par un appel d'Alice à Bob :
+
+
+Sachez que toutes les demandes SIP reçues du réseau sont traitées en utilisant le bloc request_route, qu'il s'agisse d'une demande initiale ou d'une demande dans le cadre d'un dialogue. Encore une fois, Kamailio est un routeur de la couche SIP, ce n'est pas un moteur de routage d'appels. Pour chaque demande SIP reçue, le scénariste doit définir les actions à exécuter pour cette demande.
+Le bloc request_route peut inclure des appels à des sous-routes, ce qui permet de construire une structure modulaire du fichier de configuration, offrant la possibilité de réutiliser le même ensemble d'actions à différents points du traitement des requêtes SIP. Un exemple est fourni ci-après, montrant comment appeler l'exécution de la route [FWD] à partir du bloc request_route, ce qui est fait avec la fonction route(FWD) - notez que la définition d'un bloc de sous-route utilise des crochets autour de l'ID, alors que l'appel d'une sous-route utilise des parenthèses autour de l'ID
 
 
 
+L'exécution d'une sous-route se termine quand :
+- lorsque toutes les actions de la sous-route ont été exécutées - lorsque l'action de retour est exécutée
+- lorsque l'action de sortie est exécutée
+- lorsque l'action de dépôt est exécutée
+Dans les deux premiers cas, l'interprète continuera à exécuter les actions après l'appel de la sous-rubrique. Dans les deux derniers cas, l'interprète arrêtera l'exécution du fichier de configuration pour ce message SIP.
+Une action de retour peut prendre un entier comme paramètre, qui sera renvoyé à la route appelante. Une valeur négative est évaluée à faux et une valeur positive à vrai. Le retour de 0 (zéro) est équivalent à l'action "exit" (pour des raisons de rétrocompatibilité avec les premières versions de SER).
+Si l'exécution d'une sous-route se termine à la fin du bloc, sans action de retour, cela revient à avoir retour(1) comme dernière action. Les deux sous-routes dans l'exemple suivant sont équivalentes :
 
 
-
+## BRANCH_ROUTE[ID]
 
 
 
