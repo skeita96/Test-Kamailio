@@ -317,11 +317,29 @@ Next example shows the event_route[xhttp:request] and how to send an HTTP reply 
 ## SIP REQUEST ROUTING
 Lorsqu'une demande SIP est reçue du réseau, le traitement suivant peut se produire en relation avec les blocs de routage du fichier de configuration.
 
-<img src="/images/r01.png" alt="routage sipe" />
+<img src="../images/rO1.png" alt="routage sipe" />
 
 
 
-
+Il commence par l'exécution du bloc request_route et peut se terminer par : - abandonner la demande
+- envoyer une réponse
+- en mode "apatride".
+- en mode "stateful", ce qui peut entraîner :
+- l'exécution d'un itinéraire de branche - l'abandon de la branche sortante
+ avant d'écrire au réseau la demande transmise, le bloc optionnel onsend_route peut être exécuté, ce qui donne la dernière chance d'abandonner la demande
+ 
+ ## ROUTAGE DES DEMANDES SIP EN CAS DE DÉPASSEMENT DU DÉLAI DE RETRANSMISSION ( SIP REQUEST ROUTING ON RETRANSMISSION TIMEOUT )
+ 
+ 
+ Si la demande a été transmise en mode "stateful" via UDP, Kamailio lancera un timer de retransmission, en renvoyant la demande périodiquement jusqu'à ce qu'une réponse soit reçue ou que le timer se déclenche. Un second timer attend une réponse finale dans un intervalle de temps donné, si ce n'est pas le déclenchement d'un autre timer de retransmission. 
+ 
+<img src="../images/rO2.png" alt="routage sipe" />
+ 
+ 
+ 
+ 
+ 
+ 
 
 
 
