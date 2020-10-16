@@ -392,15 +392,15 @@ Comme Kamailio peut écouter sur de nombreuses interfaces réseau ou différents
 Il pourrait donc être très peu pratique de tester une variable par rapport à toutes ces adresses IP et alias d'hôtes. Vous pouvez utiliser ma condition à la place.
 Voici quelques exemples pour mieux expliquer où je peux être utilisé. Exemple - tester si l'appelant prétend être un utilisateur local :
 if(from_uri==myself) {
-# De l'en-tête, l'URI utilise notre IP ou alias dans la partie domaine .....
+#De l'en-tête, l'URI utilise notre IP ou alias dans la partie domaine .....
 }
 Exemple - vérifier si l'appelé est un utilisateur ou un service local :
 if(uri==myself {
-# R-URI utilise notre IP ou alias dans la partie domaine .....
+#R-URI utilise notre IP ou alias dans la partie domaine .....
 }
 Exemple - tester si le message SIP provient du serveur lui-même (boucle) :
 if(src_ip==myself) {
-# Le message SIP a été envoyé par le serveur lui-même**
+#Le message SIP a été envoyé par le serveur lui-même**
 
 
 
