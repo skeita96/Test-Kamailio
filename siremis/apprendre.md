@@ -335,13 +335,42 @@ Il commence par l'exécution du bloc request_route et peut se terminer par : - a
  
 <img src="../images/r02.png" alt="routage sipe" />
  
- 
- 
- 
- 
- 
+## Éléments du fichier de configuration
 
+Dans un chapitre précédent a été présentée la structure du fichier de configuration, en l'examinant du point de vue des composantes conceptuelles. Le chapitre suivant aborde les éléments qui peuvent être utilisés à l'intérieur de ces composants, en se concentrant sur les éléments qui sont utilisés pour construire la liste des actions dans les blocs de routage.
+Les commentaires et les directives du pré-processeur ont été détaillés dans le chapitre précédent, ils peuvent également être utilisés à l'intérieur des blocs de routage, mais, là encore, ils sont traités avant l'analyse syntaxique du fichier de configuration.
 
+## ACTION 
 
+Une action est un terme générique qui désigne une expression, une déclaration ou un appel de fonction autonome à l'intérieur d'un bloc de routage. Chaque action doit être terminée par un point-virgule " ;" à moins que l'action ne comprenne un bloc d'autres actions entouré d'accolades.
+L'exemple suivant présente quelques actions choisies au hasard
+ 
+ 
+ 
+MOT-CLÉ VARIABLE
+Avant de disposer d'un cadre générique de variables de fichiers de configuration, plusieurs mots clés ont été définis pour être utilisés dans des conditions logiques à l'intérieur de blocs de routage. Ils ont un rôle similaire à celui des variables, leur valeur dépendant du message SIP actuellement traité.
+En voici plusieurs :
+- méthode - référence à la méthode SIP
+- statut - référence au code de statut de la réponse SIP
+- uri - référence à la demande SIP URI
+- from_uri - référence à From header URI
+- to_uri - référence à l'URI de l'en-tête
+- src_ip - référence à l'adresse IP source
+- src_port - référence au port source
+- af - référence à la famille d'adresses (IPv4 ou IP v6)
+- proto - référence au type de couche transport (UDP, TCP, TLS ou SCTP) - dst_ip - IP local où le message a été reçu
+- dst_port - port local où le message a été reçu
+- snd_ip - adresse IP locale d'où la demande sera envoyée
+- snd_port - port local à partir duquel la demande sera envoyée
+- to_ip - l'adresse IP où la demande sera envoyée
+- to_port - le port où la demande sera envoyée
+
+Next is an example of testing the source IP against 1.2.3.4:
+if(src_ip==1.2.3.4) {
+#SIP message received from 1.2.3.4 ...
+}
+Another example shows how to test if received request is an INVITE:
+if(method==”INVITE”) {
+#received an INVITE request
 
 
