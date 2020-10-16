@@ -174,6 +174,154 @@ Si l'exécution d'une sous-route se termine à la fin du bloc, sans action de re
 
 ## BRANCH_ROUTE[ID]
 
+## EPLY_ROUTE
+
+Le bloc reply_route peut être défini pour le traitement des réponses SIP, étant l'équivalent de ce qu'est request_route pour les demandes SIP.Routing SIP responses is improper terminology, because the SIP specification forces the route of a SIP response - it has to be sent back to the address advertised in the top most Via of the received request. A SIP server or other SIP UA cannot force a different path for a SIP response.
+Therefore the only routing decision that can be done in reply_route block is to drop a SIP response, instead on sending it further based on Via header. For example, that can be useful when some devices behave incorrectly on various provisional replies, a solution being simply drop them, although the recommended solution is to get the vendor of the device to fix the issue.
+The reply_route block is executed by core, for each received SIP response, no matter is provisional or final, for the second on both positive and negative responses. If the reply_route block is not defined in the Kamailio configuration file, the core simply forwards the SIP response based on Via stack.
+Logically, the list of actions in a reply_route block can end in: • drop the SIP response
+• let the response processing go on, meaning:
+• modules can do specific processing - here is practically transaction processing from the tm module
+• send the SIP response to the network based on Via stack
+The next diagram presents SIP response processing and the relation to reply_route block:
+
+
+Le bloc reply_route ne doit définir que lorsqu'un ensemble d'actions doit être exécuté pour toutes les réponses SIP, sinon, le module tm offre un mécanisme permettant d'exécuter des blocs de routage uniquement pour les réponses SIP appartenant à des transactions sélectionnées, un mécanisme qui est présenté dans la section suivante.
+Le mot-clé status ou la variable $rs peuvent être utilisés pour tester la valeur du code de statut pour une réponse SIP. L'exemple suivant montre un bloc reply_route qui imprime un message de journal pour les réponses de sonnerie et de session en cours
+
+                        reply_route { if(status=~”18[03]”) {
+                        xlog(“ringing or session in progress response received\n”); }
+                        }
+
+Un cas d'utilisation de reply_route est de vérifier si la réponse SIP appartient à une transaction active, par exemple dans le cas où toutes les demandes reçues par le serveur SIP sont transmises en mode "stateful". La fonction t_check_trans() renvoie vrai s'il y a une transaction active qui correspond à la réponse SIP. L'exemple suivant montre comment vous pouvez abandonner les réponses SIP qui ne correspondent à aucune transaction active :
+
+                        reply_route { if(!t_check_trans()) drop;
+                        }
+
+
+## ONREPLY_ROUTE[ID] 
+
+Il s'agit du bloc d'acheminement qui peut être défini pour effectuer un traitement spécifique pour les réponses SIP qui appartiennent à des transactions sélectionnées. Il s'agit d'un bloc de routage exécuté à la demande par le module tm. Afin d'associer un onreply_route[ID] à une transaction, la fonction t_on_reply("ID") doit être exécutée avant de relayer la demande qui a créé la transaction.
+Le bloc onreply_route [ID] est exécuté par le module tm après que le noyau ait exécuté le bloc reply_route et avant le failure_route [IDX] (lorsqu'une route d'échec est attachée à la transaction et que la réponse SIP est négative).
+Les cas d'utilisation typiques pour onreply_route [ID] sont de compléter le traitement des transactions qui créent des dialogues, par exemple :
+- Traitement de traversée NAT
+- mettre à jour le SDP à partir de l'appel et compléter les attributs requis par le RTP
+proxy pour démarrer la session de relais de flux média
+- mettre à jour l'en-tête de contact de l'appelé pour pouvoir acheminer les demandes dans le dialogue
+Le bloc onreply_route [ID] est exécuté pour toutes les réponses SIP qui correspondent à des transactions sélectionnées et qui doivent être relayées en amont, ainsi le 100 Trying qui est absorbé par le serveur SIP n'arrive pas au bloc onreply_route [ID].
+
+L'ID utilisé pour les blocs onreply_route peut être n'importe quelle chaîne ou valeur numérique. Il n'y a pas de limite au nombre de blocs onreply_route qui peuvent être définis, il doit y avoir des ID différents et suffisamment de mémoire privée pour stocker les versions analysées.
+Le fichier de configuration par défaut utilise un bloc onreply_route [ID] pour le traitement de traversée NAT. L'exemple suivant s'ajoute à celui utilisé pour le bloc failure_route [ID] pour montrer comment attacher le bloc onreply_route [INFO] à une transaction :
+
+                        loadmodule “tm.so”
+                        loadmodule “sl.so” 
+                        oadmodule “textops.so” 
+                        loadmodule “usrloc.so” 
+                        loadmodule “registrar.so” 
+                        request_route {
+                        if(is_method("OPTIONS")) {
+                        #send reply for each OPTIONS request
+                        sl_send_reply("200", "I got it");
+                        exit;
+                        } 
+                        if(!lookup(“location”)) {
+                        #not found in location table 
+                        sl_send_reply("404", "Not found"); exit;
+                        } 
+                        route(FWD);
+                        xlog(“request $rm from $fu has been forwarded\n”);
+                        exit;
+                        }
+                        route[FWD] {
+                                    #require branch route execution and forward stateful
+                                    t_on_branch(“CHECK”);
+                                    t_on_failure(“REROUTE”);
+                                    t_on_reply(“INFO”);
+                                    t_relay();
+                                    }
+                                    branch_route[CHECK] {
+                                    if($rd==”badserver.com”) {
+                                    drop;
+                                    } 
+                                    else if if($rd==”2.3.4.5”) {
+                                     append_hf(“X-My-Hdr: abc\r\n”):
+                                    } else {
+                                    append_hf(“X-My-Hdr: xyz\r\n”):
+                                    } 
+                         }
+                        #manage failure routing cases  
+                        failure_route[REROUTE] {
+                        if (t_is_canceled()) {
+                        exit;
+                        }
+                        #serial forking
+                        #route to voicemail on busy or no answer (timeout)
+                        if (t_check_status("486|408")) {
+                        #voicemail server is at 6.7.8.9
+                        #build new destination address using incoming R-URI username 
+                        $ru = “sip:” + $oU + “@6.7.8.9”;
+                        t_on_failure(“VMDOWN”);
+                        t_relay();
+                        exit;
+                        } }
+                        #handle the case when voicemail server is down 
+                        failure_route[VMDOWN] {
+                        if (t_is_canceled()) { 
+                        exit;
+                        }
+                        #enforce server failure response code 
+                        t_reply(“500”, “Server error”);
+                        }
+                        #print response status code
+                        onreply_route[INFO] {
+
+                        xlog(“ SIP response with code $rs has been received for an active transaction\n”); 
+                        }
+                        onreply_route[INFO] { if(status==”403”)
+                        t_reply(“404”, “Not found”); 
+                        }
+
+
+
+La fonction t_reply(code, texte) peut être utilisée dans onreply_route[ID] pour envoyer un code de statut différent de celui reçu. Elle s'applique aux réponses provisoires ou négatives, les 200 ok (ou autres réponses positives) ne peuvent plus être modifiés à cette couche de transaction (vous ne pouvez l'abandonner qu'à partir du bloc reply_route). Par exemple, changer un 403 en un 404 :
+
+## EVENT_ROUTE[ID]
+
+Il s'agit d'un bloc de routage générique destiné à permettre aux composants du serveur SIP de Kamailio (noyau ou modules) d'exécuter des actions de fichiers de configuration (définies par les auteurs de scripts) sur des événements spécifiques.
+L'un des plus fréquemment utilisés est event_route [tm:local-request] qui est exécuté par le module tm lorsqu'il envoie des requêtes SIP générées localement, telles que des BYE pour mettre fin aux dialogues VoIP actifs ou des NOTIFY pour mettre à jour les observateurs avec les états de présence de présentité.
+Contrairement aux ID des autres blocs de routage, où il peut s'agir de n'importe quelle chaîne de caractères ou de valeurs numériques, pour event_route, les ID sont des valeurs prédéfinies, spécifiées par les composants qui exécutent l'itinéraire d'événement. Le format commun est "component:event", le composant étant "core" (aucun encore, cependant) ou le nom du module. Ce modèle n'est pas imposé par le code source, étant plutôt un accord adopté par les développeurs.
+Voici plusieurs blocs event_route définis pour Kamailio v4.2.x :
+- event_route [tm:local-request] - exécuté par le module tm, détaillé ci-dessus
+- event_route [sl:filtered-ack] - exécuté par le module sl lorsqu'une demande ACK est reçue pour une réponse négative envoyée par ce module
+- event_route [htable:mod-init] - exécuté par htable une fois que le module a initialisé les structures de la table de hachage. Il n'est exécuté qu'une seule fois au démarrage, utile pour ajouter des valeurs initiales dans les tables de hachage
+- event_route [dialog:start] - exécuté par le module de dialogue lorsqu'un dialogue VoIP est lancé (c'est-à-dire que 200 ok pour l'INVITE initiale est reçu)
+- event_route [dialog:end] - exécuté par le module de dialogue lorsqu'un dialogue VoIP est terminé (c'est-à-dire lorsque la demande BYE est reçue ou que le délai de durée du dialogue est déclenché)
+- event_route [dialog:failed] - exécuté par le module dialog lorsqu'un dialogue VoIP n'est pas établi (c'est-à-dire que la demande INVITE initiale obtient une réponse négative)
+- event_route [dispatcher:dst-down] - exécuté par le module dispatcher lorsqu'une passerelle de destination est détectée comme indisponible par OPTIONS keepalives
+- event_route [dispatcher:dst-up] - exécuté par le module dispatcher lorsqu'une passerelle de destination est détectée comme redevenant disponible par OPTIONS keepalives
+
+• event_route[xhttp:request] - executed by the xhttp module when an HTTP request is received
+• event_route[msrp:frame-in] - executed by the msrp module when a MSRP frame is received
+Next example shows the event_route[xhttp:request] and how to send an HTTP reply with an HTML document in it:
+
+
+                        event_route[xhttp:request] { xhttp_reply("200", "OK", "text/html",
+                        "<html><body>”
+                        “Thank you for browsing Kamailio instance! <br /> Your IP is: $si” “</body></html>");
+                        }
+
+
+
+# SIP Message Routing
+
+## SIP REQUEST ROUTING
+Lorsqu'une demande SIP est reçue du réseau, le traitement suivant peut se produire en relation avec les blocs de routage du fichier de configuration.
+
+
+
+
+
+
 
 
 
