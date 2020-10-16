@@ -317,7 +317,7 @@ Next example shows the event_route[xhttp:request] and how to send an HTTP reply 
 ## SIP REQUEST ROUTING
 Lorsqu'une demande SIP est reçue du réseau, le traitement suivant peut se produire en relation avec les blocs de routage du fichier de configuration.
 
-             <img src="../images/r01.png" alt="routage sipe" />
+<img src="/images/r01.png" alt="routage sipe" />
 
 
 
