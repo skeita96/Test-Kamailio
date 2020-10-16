@@ -374,3 +374,37 @@ if(method==”INVITE”) {
 #received an INVITE request
 
 
+MOT-CLÉ DE LA VALEUR
+Outre les mots-clés ayant le rôle de variables, le noyau en définit certains à utiliser comme valeur. Leurs valeurs sont constantes pendant l'exécution, et ne dépendent pas du message SIP traité en cours :
+Ensuite, plusieurs d'entre elles sont présentées :
+- INET - valeur qui peut être testée par rapport au mot-clé af pour voir si la famille d'adresses est IPv4
+- INET6 - valeur qui peut être testée par rapport au mot-clé af pour voir si la famille d'adresses est IPv6
+- UDP, TCP, TLS ou SCTP - valeurs qui peuvent être testées par rapport au mot-clé proto pour établir les conditions sur le type de couche de transport
+- myself - peut être utilisé pour tester les mots-clés des adresses URI ou IP afin de détecter s'il y a correspondance avec les adresses fournies comme variables globales d'écoute ou d'alias
+L'exemple ci-dessous montre comment tester si le message SIP a été reçu sur IPv6 :
+if(af==INET6) {
+#Message SIP reçu d'IPv6 ...
+}
+
+## MOT-CLEF MYSELF
+**Le mot clé "moi-même" est assez important et très souvent utilisé dans les fichiers de configuration. C'est la façon dont on peut tester dans le fichier de configuration si une adresse correspond aux domaines du serveur SIP local ou aux adresses IP.
+Comme Kamailio peut écouter sur de nombreuses interfaces réseau ou différents ports, il peut avoir une liste d'adresses qui s'identifient à lui-même. Outre l'écoute des sockets, on peut définir des alias de noms d'hôtes en utilisant le paramètre global d'alias. Une autre façon de démarrer Kamailio est d'omettre de fournir des paramètres d'écoute, puis Kamailio détectera automatiquement toutes les interfaces réseau locales et commencera à écouter sur chacune d'elles, en construisant sa liste d'adresses locales au démarrage.
+Il pourrait donc être très peu pratique de tester une variable par rapport à toutes ces adresses IP et alias d'hôtes. Vous pouvez utiliser ma condition à la place.
+Voici quelques exemples pour mieux expliquer où je peux être utilisé. Exemple - tester si l'appelant prétend être un utilisateur local :
+if(from_uri==myself) {
+# De l'en-tête, l'URI utilise notre IP ou alias dans la partie domaine .....
+}
+Exemple - vérifier si l'appelé est un utilisateur ou un service local :
+if(uri==myself {
+# R-URI utilise notre IP ou alias dans la partie domaine .....
+}
+Exemple - tester si le message SIP provient du serveur lui-même (boucle) :
+if(src_ip==myself) {
+# Le message SIP a été envoyé par le serveur lui-même**
+
+
+
+
+
+
+
