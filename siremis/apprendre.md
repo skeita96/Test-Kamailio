@@ -333,7 +333,7 @@ Il commence par l'exécution du bloc request_route et peut se terminer par : - a
  
  Si la demande a été transmise en mode "stateful" via UDP, Kamailio lancera un timer de retransmission, en renvoyant la demande périodiquement jusqu'à ce qu'une réponse soit reçue ou que le timer se déclenche. Un second timer attend une réponse finale dans un intervalle de temps donné, si ce n'est pas le déclenchement d'un autre timer de retransmission. 
  
-<img src="../images/rO2.png" alt="routage sipe" />
+<img src="../images/r02.png" alt="routage sipe" />
  
  
  
