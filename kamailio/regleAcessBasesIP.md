@@ -1,4 +1,4 @@
-Règles d'accès basées sur le IP
+# Règles d'accès basées sur le IP
 
 Dans de nombreux déploiements, l'instance de serveur SIP doit être interconnectée avec d'autres nœuds du réseau ou avec d'autres fournisseurs de services SIP. Il peut s'agir d'un serveur de média de transcodage, d'un proxy de périphérie, d'un fournisseur d'origine et de terminaison RTC ou d'un partenaire de peering amical.
 Dans ces cas, les appels d'authentification par nom d'utilisateur et mot de passe sont la plupart du temps impossibles. La solution réside dans des relations IP de confiance. Chaque nœud SIP utilise une IP statique (ou se trouve dans un sous-réseau spécifique) qui est conservée dans une liste d'adresses de confiance. Lorsque les demandes SIP proviennent de ces adresses, elles sont autorisées sans être contestées pour l'authentification.
@@ -117,6 +117,70 @@ L'adresse de la table de la base de données est définie par l'instruction SQL
  
  <img src="../images/tb02.png" alt="tableau">
  
+L'ID de groupe doit être 1 (un) ou plus, 0 (zéro) n'étant pas autorisé en raison de la signification particulière des codes de retour des fonctions pour le fichier de configuration.
+Si le port est défini à 0 (zéro), il ne sera pas utilisé pour la correspondance (la correspondance se fera uniquement sur l'adresse IP). La valeur du tag est optionnelle, si elle n'est pas définie, rien n'est renvoyé dans la variable du fichier de configuration qui lui est associée.
+ 
+Les enregistrements de la table de la base de données sont chargés par Kamailio au démarrage et mis en cache sous une forme pré-compilée qui est utilisée au moment de l'exécution. Le module de permission peut réagir sur une commande de contrôle MI/RPC et recharger les enregistrements sans avoir besoin de redémarrer.
+La documentation relative à ce module est disponible en ligne à l'adresse suivante
+- http://kamailio.org/docs/modules/4.2.x/modules/permissions.html
+
+### LA GESTION DES DOCUMENTS 
+
+L'ajout, la suppression ou la mise à jour des enregistrements dans la base de données peuvent se faire via : 
+- kamctl
+- siremis
+
+### GESTION AVEC KAMCTL
+Kamctl fournit la commande "address" pour gérer les enregistrements utilisés par le module de permission à partir de la table de base de données "address". Ensuite, le message d'aide imprimé par l'outil kamctl pour cette commande :
+
+
+
+~# kamctl address
+--command 'add|dump|reload|rm|show' - manage address
+-address show ...................... show db content
+-address dump ...................... show cache content address 
+-reload .................... reload db table into cache address
+-add <grp> <ipaddr> <mask> <port> <tag>
+....................... add a new entry
+....................... (mask, port and tag are optional arguments) 
+            
+-address rm <grp> <ipaddr> ......... remove entries for given grp and ipaddr
+            
+Comme indiqué ci-dessus, les sous-commandes disponibles sont :
+- show - kamctl effectue une requête SQL et imprime le contenu de l'adresse de la table de la base de données
+- dump - kamctl envoie la commande MI 'address_dump' pour récupérer le contenu du cache du module de permissions
+- reload - kamctl envoie la commande MI 'address_reload' pour demander à Kamailio de recharger les enregistrements de la table de la base de données
+- add - kamctl effectue une requête SQL pour insérer un nouvel enregistrement dans l'adresse de la table de la base de données. Notez que le nouvel enregistrement n'est pas encore utilisé par un Kamailio en cours d'exécution, une commande de rechargement d'adresse doit être émise pour que le serveur SIP soit informé des mises à jour.
+- rm - kamctl effectue une requête SQL pour supprimer des enregistrements dans l'adresse de la table de la base de données. Notez que les enregistrements supprimés sont toujours utilisés par un Kamailio en cours d'exécution, une commande de rechargement d'adresse doit être émise pour que le serveur SIP soit au courant des mises à jour.
+
+La procédure habituelle pour gérer les enregistrements d'adresses pour le module de permission consiste à mettre à jour d'abord la table de la base de données (en faisant plusieurs ajouts/suppressions si nécessaire) et ensuite à lancer une commande de rechargement MI/RPC.
+L'exemple suivant montre l'ajout des adresses IP 1.2.3.4 et 2.3.4.5 au groupe de confiance 1 :
+
+            kamctl address add 1 1.2.3.4 32 0 “mediasrv” 
+            kamctl address add 1 2.3.4.5 32 0 “pstngw” 
+            kamctl address reload
+            
+Le masque de réseau est réglé sur 32 pour correspondre à l'IP complète et le port est réglé sur 0 (zéro) pour l'ignorer. La valeur #tag est définie comme une courte représentation du type de dispositif de peering, respectivement un serveur de média et une passerelle RTPC.
+La suppression de l'IP 1.2.3.4 est effectuée par :
+
+            kamctl address rm 1 1.2.3.4 
+            kamctl address reload
+
+
+MANAGEMENT WITH SIREMIS
+
+Siremis includes a dedicated view for managing permissions’ address records. It is available in the panel SIP Admin M enu, at ACL S ervices => P ermissions - Address. To add a new record, press Add button in the main list view. Next image presents the form for adding a new record:
+
+
+Dans la liste principale des adresses des modules d'autorisation, les boutons qui permettent de les utiliser sont affichés : 
+
+- l'ajout de nouveaux enregistrements |        adding new records                        
+- la suppression des enregistrements|           removing records
+- l'édition des dossiers |                       editing records
+- la recherche de dossiers |                    searching records
+- l'exportation de documents vers un fichier |  exporting records to a file
+- la navigation à travers plusieurs pages d'enregistrements|  navigation through multiple pages of records
+
 
 
 
