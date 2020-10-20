@@ -153,6 +153,113 @@ En pratique, la route d'authentification présente dans le fichier de configurat
 
 
 
+code ici ...............
+
+
+
+Cette fois, après que www_authenticate() et proxy_authenticate() ont pu affirmer que le nom d'utilisateur et le mot de passe étaient corrects, les contrôles d'identité sont effectués avec des conditions FI, comme :
+si ($au!=$tU)
+#ou
+si ($au!=$fU)
+où $au est la variable pointant vers le nom d'utilisateur de l'authentification, $tU est la variable pointant vers le nom d'utilisateur de l'URI de l'en-tête et $fU est la variable pointant vers le nom d'utilisateur de l'URI de l'en-tête.
+Vous pouvez modifier ces conditions pour les adapter à vos besoins. Le module uri_db exporte deux fonctions, check_to() et check_from() qui peuvent effectuer des tests similaires, mais en utilisant des enregistrements d'une table de base de données, voir plus loin :
+- http://kamailio.org/docs/modules/4.2.x/modules/uri_db.html
+Par conséquent, la relation entre les valeurs qui peuvent être dans le nom d'utilisateur d'authentification et #From/To
+Le nom d'utilisateur peut être stocké dans la base de données.
+
+## L'AUTHENTIFICATION À L'AIDE D'UN BACKEND PERSONNALISÉ
+
+Le module d'authentification exporte deux fonctions qui prennent le mot de passe par paramètre :
+- pv_www_authenticate(realm, password, flags) - pour l'authentification WWW digest - pv_proxy_authenticate(realm, password, flags) - pour l'authentification proxy digest
+Le nom d'utilisateur est tiré de l'en-tête d'autorisation, le mot de passe peut être récupéré via des opérations dans le fichier de configuration, certaines options étant :
+- récupérer le mot de passe à partir d'un serveur LDAP en utilisant le module ldap
+- récupérer le mot de passe à partir d'un serveur HTTP en utilisant un module d'utils ou un script intégré (par ex,
+Lua, Perl, Python, C#)
+- récupérer le mot de passe d'une application externe en l'exécutant à l'aide du module d'exécution
+Par exemple, nous envisageons d'aller chercher les données sur un serveur HTTP, en invoquant un script php nommé getpassword.php, qui prend un paramètre qui fournit le nom d'utilisateur. Le mot de passe est renvoyé à la première ligne du corps de la réponse 200 HTTP.
+La route [AUTH] pourrait ressembler à :
+
+
+
+
+          route[AUTH] {
+           if(is_method("REGISTER") || from_uri==myself) {
+
+                  if( ! ( (is_method("REGISTER") && is_present_hf("Authorization")) || is_present_hf("Proxy-Authorization") ) ) {
+
+                      auth_challenge("$fd", "0");
+                      exit; 
+                  }
+
+              #authorization header is present - fetch the password http_query("http://myserver.com/getpassword.php?username=$(au{s.escape.param})","$var(password)");
+              #if not HTTP 200ok, then invalid user => forbid access
+              if($rc!=200) {
+
+                  sl_send_reply("403", "Forbidden");
+                  exit;
+              }
+              if(is_method("REGISTER") {
+
+                  if (!pv_www_authenticate("$td", "$var(password)", "0")) {
+                  www_challenge("$td", "1");
+                  exit; 
+              }
+                  # checking the identity 
+                  if($au!=$tU) {
+
+                      sl_send_reply("403","Forbidden auth ID");
+                      exit; 
+                  }
+          } 
+          else {
+
+              if (!pv_proxy_authenticate("$fd", "$var(password)", "0")) {
+
+                  proxy_challenge("$fd", "0");
+                  exit; 
+              }
+              #checking the identity 
+              if($au!=$fU) {
+
+                  sl_send_reply("403","Forbidden auth ID");
+                  exit;
+               }
+          }
+              #user authenticated - remove auth header 
+              if(!is_method("REGISTER|PUBLISH")){
+
+                  consume_credentials();
+              }
+              #if caller is not local subscriber, then check if it calls
+              #a local destination, otherwise deny, not an open relay here
+              if (from_uri!=myself && uri!=myself) {
+
+                  sl_send_reply("403","Not relaying");
+                  exit; 
+              }
+              return;
+          }
+
+
+La logique des actions est :
+- s'il s'agit d'un enregistrement ou d'une demande d'un utilisateur prétendant être local, alors vérifiez si les en-têtes d'autorisation figurent dans les demandes
+- si aucun en-tête d'autorisation n'est trouvé, contester la demande d'authentification
+- si des en-têtes d'autorisation sont trouvés, alors récupérez le mot de passe via la fonction http_query(...)
+à partir du module utils, en le stockant dans $var(password)
+- si le serveur HTTP ne renvoie pas une réponse 200 ok avec le mot de passe, alors interdisez l'accès
+- si le mot de passe est récupéré correctement, alors faites l'authentification de l'utilisateur en utilisant soit www_authenticate() soit proxy_authenticate(), selon qu'il s'agit d'une demande d'enregistrement ou d'une demande par procuration.
+- si l'authentification échoue, contestez à nouveau la demande de nouveau mot de passe
+- si l'authentification est correcte, faites des vérifications d'identité supplémentaires (vous pouvez mettre à jour si nécessaire)
+- les dernières actions consistent à supprimer les en-têtes d'autorisation pour les demandes à transmettre et à s'assurer que l'appelant ou l'appelé est local, afin d'éviter qu'il ne soit utilisé comme relais ouvert
+Vous pouvez en savoir plus sur les fonctions utilisées dans ce fichier de configuration à l'adresse suivante
+- http://kamailio.org/docs/modules/4.2.x/modules/auth.html - http://kamailio.org/docs/modules/4.2.x/modules/utils.html
+
+### REMARQUES
+L'authentification avec Kamailio est assez flexible, vous donnant de nombreux outils pour renforcer les contrôles selon vos besoins et utiliser n'importe quel type de stockage pour le profil de l'utilisateur.
+Le module d'authentification dispose de plusieurs modules pour contrôler l'utilisation des valeurs de nonce, de la validité d'intervalle à un nonce temporel, permettant même le partage de nonces sur plusieurs instances de serveur SIP.
+Le mot de passe peut être en texte clair ou en version hachée au format HA1, stocké localement ou à distance, en utilisant des connecteurs natifs ou personnalisés pour les backends.
+
+
 
 
 
