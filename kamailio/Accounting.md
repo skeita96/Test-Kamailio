@@ -337,7 +337,64 @@ Au cours de l'assistant d'installation, à l'étape 2. Configuration de la base 
 - Mise à jour de la base de données SIP (en bas de la page, au-dessus des boutons Précédent - Suivant, voir la capture d'écran suivante)
 
 <img src="../images/sr01.png" alt="acc table">
+
+Sachez que cette option supprime les anciens tableaux d'accès et d'appels manqués, donc assurez-vous que vous n'y avez pas d'enregistrements de valeur.
+Si vous voulez vérifier quelles instructions SQL sont exécutées par cette option, regardez dans le dossier Siremis :
+siremis/modules/ser/mod.install.siremis.sql
+Les enregistrements comptables peuvent être consultés dans le menu administratif du **SIP => Services comptables => Liste comptable** - la vue par défaut ne montre que plusieurs attributs, pour les voir tous pour chaque enregistrement, cliquez sur la colonne Id.
  
+<img src="../images/sr02.png" alt="acc table">
+
+## CALL DATA RECORDS ( LES ENREGISTREMENTS DES DONNÉES D'APPEL)
+
+Les CDR peuvent être créés en appelant la procédure stockée kamailio_cdrs(). La procédure a été ajoutée par l'assistant d'installation et peut être exécutée en externe via cron.d ou des applications similaires. Elle peut également être exécutée à partir de kamailio.cfg en chargeant les modules rtimer et sqlops et en définissant une exécution par bloc de route périodique. Les prochains snippets doivent être ajoutés dans kamailio.cfg :
+
+
+            #!define WITH_MYSQL
+            #!define WITH_ACCDB
+            ...
+            #-- Siremis CDRs -------------- 
+            loadmodule "rtimer.so" 
+            loadmodule "sqlops.so"
+            ...
+            
+            modparam("rtimer", "timer", "name=cdr;interval=300;mode=1;")
+            modparam("rtimer", "exec", "timer=cdr;route=CDRS")
+            modparam("sqlops", "sqlcon", "cb=>mysql://kamailio:kamailiorw@localhost/kamailio") ...
+            
+            #route block for period execution of stored procedures for:
+            #CDRs generation
+            #CDRs rating
+            route[CDRS] {
+            sql_query("cb","call kamailio_cdrs()","rb");
+            sql_query("cb","call kamailio_rating('default')","rb"); 
+            }
+...
+
+Le bloc de route CDRS est exécuté toutes les 5 minutes (300 secondes), si vous souhaitez un intervalle plus court ou plus long, modifiez la valeur de l'attribut d'intervalle pour le paramètre de temporisation du module rtimer.
+Faites attention à ne pas conserver les enregistrements comptables pendant très longtemps, surtout si vous avez beaucoup d'appels, car les tables peuvent devenir volumineuses et MySQL ralentira. Vous pouvez supprimer les anciens enregistrements du même parcours [CDRS], par exemple en supprimant les enregistrements de plus de 180 jours :
+
+        route[CDRS] { sql_query(“cb”,
+        ...
+      
+        "DELETE FROM acc WHERE time < DATE_SUB(NOW(), INTERVAL 180 DAY)”);    
+      } ...
+
+
+
+La procédure de stockage kamailio_cdrs() sélectionne tous les nouveaux INVITEs (ceux qui n'ont pas de valeur pour la colonne cdr_id) et recherche ensuite l'enregistrement BYE correspondant. Si elle le trouve, elle calcule alors la durée comme différence de temps entre les enregistrements BYE et INVITE, le résultat étant stocké dans la table cdrs. La structure de la table cdrs est la suivante :
+
+
+<img src="../images/sr03.png" alt="acc table">
+<img src="../images/sr04.png" alt="acc table">
+
+
+
+
+
+
+
+
 
 
 
