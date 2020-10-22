@@ -226,21 +226,119 @@ Les fonctions peuvent être utilisées pour écrire des enregistrements comptabl
 - au moment où l'INVITE initiale est envoyée
 - lorsque la première réponse provisoire est reçue
 
+- lorsque la réponse à la sonnerie est reçue
+Par exemple, le délai de post-communication correspond au décalage horaire par rapport à l'appel initial INVITE et à la sonnerie
+réponse.
+
+## LES MOTEURS DE STOCKAGE COMPTABLE 
+
+Comme nous l'avons déjà dit, Kamailio peut stocker les documents comptables dans plusieurs backends : 
+- syslog - écrire les enregistrements dans le fichier syslog
+- base de données - écrire les enregistrements dans un moteur de base de données
+- radius - envoyer les détails à un serveur RADIUS
+- diamètre (pas vraiment maintenu, développé lorsque DIAMETER était un projet, pas IETF RFC)
 
 
+## ACCOUNTING TO SYSLOG
 
+Les enregistrements comptables apparaissent sous forme de messages de journal dans le fichier syslog. Pour écrire l'enregistrement comptable afférent dans syslog, chaque transaction SIP doit être marquée avec le drapeau défini par le paramètre log_flag.
 
-
-
-
-
-                
-                  
-                      
-                        
+    332. modparam("acc", "log_flag", FLT_ACC)      
+  
+ FLT_ACC est défini à 1 dans le fichier par défaut kamailio.cfg. Pour obtenir plus que les détails comptables par défaut, vous devez définir le paramètre log_extra - default kamailio.cfg utilise :                  
+                                          
                           
+        334. modparam("acc", "log_extra",
+        335. "src_user=$fU;src_domain=$fd;src_ip=$si;"
+        336. "dst_ouser=$tU;dst_user=$rU;dst_domain=$rd")
+        
+ 
+Pour une transaction comptabilisée, le message syslog ressemble à
+
+    ACC: transaction answered: timestamp=1374693742;method=INVITE;from_tag=klsjfuhkjnsadfiusf;to_-         tag=osfjklsdfDSRwds;call_id=vRtGVfXTzMK.AwgiT2F3JCxv3OR2tWtI;code=200;reason=OK;sr- c_user=alice;src_domain=kamailio.lab;src_ip=192.168.178.46;dst_ouser=carol;dst_user=carol;dst_do- main=192.168.178.47
+    
+Le module acc exporte des paramètres qui permettent de définir différentes valeurs pour la facilité de journalisation (permettant d'obtenir des enregistrements comptables dans un fichier dédié via la configuration de syslog) ainsi que le niveau de journalisation (assurez-vous que sa valeur n'est pas supérieure au paramètre global de débogage afin d'obtenir l'écriture des enregistrements).
+Pour obtenir un CDR complet des enregistrements comptables, il faut écrire des outils pour analyser les messages de syslog, faire correspondre les enregistrements BYE et INVITE par call_id, from_tag et to_tag, calculer la durée comme différence entre le temps de BYE et le temps de INVITE.
+La comptabilisation dans syslog peut être très utile comme stockage de sauvegarde, en y imprimant moins d'attributs (seulement ceux qui sont pertinents pour la facturation, par exemple, pour être sûr si le backend de la base de données est en panne de façon inattendue).
+
+# ACCOUNTING TO DATABASE
+
+Il s'agit probablement de la solution la plus pratique, car elle permet de générer facilement des rapports à l'aide de requêtes SQL. D'autre part, Kamailio ne dispose pas de backends SQL qui mettent en œuvre son API de base de données interne (par exemple, Cassandra, MongoDB, fichiers texte), couvrant ainsi la plupart des besoins de partage avec d'autres systèmes ou de traitement personnalisé.
+Pour écrire l'enregistrement comptable afférent dans la base de données, chaque transaction SIP doit être marquée avec le drapeau défini par le paramètre db_flag.
+
+
+                340. modparam("acc", "db_flag", FLT_ACC)
+           
+ Étant le même que celui utilisé pour la comptabilité syslog, FLT_ACC est défini à 1 dans le fichier kamailio.cfg par défaut. Pour obtenir plus que les détails de la comptabilité par défaut, vous devez définir le paramètre db_extra - default kamailio.cfg uses :
+
+
+            343. modparam("acc", "db_extra",
+            344. "src_user=$fU;src_domain=$fd;src_ip=$si;"
+            345. "dst_ouser=$tU;dst_user=$rU;dst_domain=$rd")
+
+
+Pour une transaction INVITE comptabilisée, l'enregistrement de la base de données ressemble à
+
+
+
+                  id: 20  
+                method: INVITE
+                from_tag: vRn7KTHPr 
+                to_tag: caKaFr9jmDvSN 
+                callid: WtkExv-2o3
+                sip_code: 200 
+                sip_reason: OK
+                time: 2015-01-01 11:21:54 
+                src_ip: 192.168.178.48
+                dst_ouser: david 
+                dst_user: david
+                dst_domain: 192.168.178.54 
+                src_user: alice
+                src_domain: kamailio.lab
+
+Une fois l'appel terminé, un autre enregistrement pour la transaction BYE est écrit :
+
+
+
+                   id: 21
+                  method: BYE
+                from_tag: caKaFr9jmDvSN 
+                to_tag: vRn7KTHPr 
+                callid: WtkExv-2o3
+                sip_code: 200 
+                sip_reason: OK
+                time: 2015-01-01 11:22:18 
+                src_ip: 192.168.178.48
+                dst_ouser: david 
+                dst_user: david
+                dst_domain: 192.168.178.54
+                src_user: alice 
+                src_domain: kamailio.lab
+
+
+Le champ le plus important pour l'enregistrement BYE est l'heure, qui est utilisée pour calculer la durée de l'appel. La correspondance entre les enregistrements INVITE et BYE appartenant au même appel doit être effectuée à l'aide des colonnes **callid, from_tag et to_tag**.
+Sachez que les valeurs from_tag et to_tag peuvent être interverties dans l'enregistrement BYE si la demande BYE est envoyée par l'appelé, et que vous devez donc également procéder à une correspondance croisée (correspondance de from_tag de INVITE avec to_tag de BYE et de to_tag de INVITE avec from_tag de BYE). Le paramètre **detect_direction** peut être réglé sur 1 afin que le module acc détecte que le BYE est envoyé par l'appelant et échange les valeurs pour obtenir les mêmes attributs From et To comme pour INVITE.
+La signification des colonnes de la table de la base de données acc est présentée dans le tableau suivant :
+
+ <img src="../images/acc01.png" alt="acc table">
+ 
+ La manière de digérer les enregistrements comptables et de construire des enregistrements complets de données d'appel est présentée plus en détail dans la section consacrée à la comptabilité à l'aide de Siremis.
+ 
+ ## COMPTABILITÉ avec RADIUS
+De nombreux systèmes de facturation ont été construits pour fonctionner avec RADIUS. Dans ce livre, nous ne l'abordons pas en détail, étant donné que l'accent est mis sur l'intégration avec la base de données. Même s'il est très ancien, c'est une bonne lecture sur ce sujet :
+- http://www.kamailio.org/docs/kamailio-radius-1.0.x.html
+En fonction de l'intérêt manifesté, une prochaine version de ce livre pourrait inclure ce sujet dans un chapitre dédié.
+
+## ACCOUNTING USING SIREMIS
+
+Siremis comprend des composants permettant de générer des enregistrements complets des données d'appel et un petit moteur de tarification permettant de fixer le coût en fonction de la correspondance du préfixe le plus long.
+Tous deux sont basés sur des procédures stockées par MySQL et peuvent être créés au cours de l'assistant d'installation. En même temps, la structure des tables des bases de données acc et missed_calls est mise à jour, afin de pouvoir stocker les attributs supplémentaires tels que configurés pour le module acc dans le fichier par défaut kamailio.cfg, plus une colonne supplémentaire nommée cdr_id, pour conserver une référence à l'enregistrement correspondant dans la table cdrs.
+Au cours de l'assistant d'installation, à l'étape 2. Configuration de la base de données, vous devez cocher l'option pour :
+- Mise à jour de la base de données SIP (en bas de la page, au-dessus des boutons Précédent - Suivant, voir la capture d'écran suivante)
+
+<img src="../images/sr01.png" alt="acc table">
+ 
 
 
 
 
-            
