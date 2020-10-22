@@ -123,20 +123,145 @@ La réponse 200 est en miroir de l'URI de l'en-tête Contact, en spécifiant le 
 Les enregistrements doivent être actualisés avant l'expiration du délai, sinon le serveur SIP supprimera l'enregistrement de sa base de données de localisation.
 Le désenregistrement se fait par le biais d'une requête REGISTER avec la même adresse de contact, mais cette fois la valeur Expire est fixée à 0, comme dans l'exemple suivant.
 
-<img src="/images/sip02" alt="SIP register">
+<img src="/images/sip02.png" alt="SIP register">
+
+La réponse 200 ne comporte pas d'en-tête Contact car elle a été supprimée des enregistrements de localisation par la demande "un-REGISTER", Alice devenant injoignable à partir de ce moment.
+Un utilisateur peut s'enregistrer avec plusieurs appareils en même temps, en ayant plus d'une adresse de contact dans la base de données de localisation. Lorsqu'il est appelé, le serveur SIP crée des branches parallèles à tous ses appareils, ce qui entraîne une sonnerie simultanée. C'est ce que l'on appelle le #parallel #forking et il est effectué automatiquement par Kamailio lors de l'utilisation du transfert d'état.
+
+
+# MODULE REGISTRAR
+
+C'est le module qui exporte les fonctions de gestion des services d'enregistrement et de localisation à partir du fichier de configuration. Il se lie au module usrloc pour stocker et récupérer les enregistrements de localisation et au module sl pour pouvoir envoyer des réponses SIP. La documentation du module est disponible à l'adresse suivante :
+- http://kamailio.org/docs/modules/4.2.x/modules/registrar.html
+
+Deux sont les plus utilisées de ses fonctions :
+- save(table, flags, uri) - qui est utilisée pour traiter les demandes d'enregistrement, mettre à jour les enregistrements de localisation avec les adresses de contact et générer une réponse appropriée. La table représente le nom de la structure en mémoire où les enregistrements d'emplacement doivent être sauvegardés ou, dans le cas d'un backend de base de données, le nom de la table de la base de données. Les drapeaux et les paramètres d'uri sont des options qui peuvent être utilisées pour contrôler le comportement de la fonction et fournir l'AoR à utiliser pour le traitement de l'enregistrement
+- lookup(table, uri) - qui est utilisé pour traiter les demandes SIP qui doivent être livrées aux abonnés locaux. Il prend l'AoR du paramètre URI ou uri de la demande et recherche dans la base de données de localisation identifiée par le paramètre table les adresses de contact correspondantes
+Les fonctions save(...) et location(...) sont utilisées en paire et le premier paramètre doit avoir la même valeur.
+Le module fournit un nombre important de paramètres qui contrôlent la fonctionnalité interne. Par exemple, vous pouvez spécifier :
+- si les fonctions lookup(...) doivent créer des branches pour tous les enregistrements d'emplacement ou n'utiliser que la première (activation/désactivation de la fonction #parallel #forking à tous les dispositifs enregistrés)
+- les valeurs minimales et maximales des échéances
+- activer/désactiver la gestion des extensions du bureau d'enregistrement telles que Path ou GRUU, entre autres fonctionnalités exportées par le module du bureau d'enregistrement :
+- vérifier si un abonné est enregistré ou non
+- Désinscrire un abonné
+- récupérer les contacts d'un abonné et les rendre disponibles via des variables de configuration
+
+### LIMITER LE NOMBRE DE CONTACTS
+
+Bien que le SIP permette d'enregistrer autant de contacts qu'un abonné peut le faire, il est bon de fixer une certaine limite pour éviter que des clients non autorisés n'enregistrent un grand nombre d'adresses. De plus, il est assez courant que les fournisseurs de services VoIP n'autorisent qu'un seul contact par abonné.
+Il existe peu d'options pour fixer de telles limites. Tout d'abord, vous pouvez fixer la limite supérieure pour tout le monde via le paramètre de module "max_contacts". Disons qu'elle doit être de 5 :
+
+            modparam("registrar", "max_contacts", 5)
 
 
 
+Si vous souhaitez avoir un seul contact par abonné, il suffit de régler la valeur du paramètre du module sur 1 :
+modparam("registrar", "max_contacts", 1)
+Lorsque ce paramètre est défini, la fonction save(...) n'accepte pas de nouveaux contacts s'il y a déjà un nombre de contacts correspondant à la limite. De plus, la valeur est valable pour tous les contacts, vous ne pouvez pas l'ajuster par abonné.
+Si vous voulez pouvoir définir le nombre de contacts par abonné, vous devez définir le paramètre xavp_cfg :
+modparam("registrar", "xavp_cfg", "reg")
+Et puis, avant d'appeler la sauvegarde, définissez le nombre de contacts dans la variable de configuration $xavp(reg=>max_contacts), disons que vous voulez 3 contacts pour l'abonné identifié par l'en-tête To de la demande d'enregistrement en cours :
+
+            $xavp(reg=>max_contacts) = 3; 
+            save(“location”);
+
+
+Vous pouvez charger la valeur pour le nombre maximum de contacts à partir du profil de l'utilisateur, via le paramètre load_credentials du module auth_db. Tout d'abord, ajoutez une nouvelle colonne entière nommée "max_contacts" dans la table des abonnés, où vous pouvez définir la valeur de la limite, puis dans le fichier de configuration :
+
+            modparam("auth_db", "load_credentials", "$avp(max_contacts)=max_contacts") .....
+            if($avp(max_contacts)!=$null) {
+            $xavp(reg=>max_contacts) = $avp(max_contacts); }
+            save(“location”); .....
+
+L'utilisation du paramètre max_contacts pourrait ne pas être utile dans les réseaux mobiles, où les appareils perdent la connectivité sans fil, puis obtiennent de nouvelles adresses IP et s'enregistrent à nouveau sans pouvoir désenregistrer les contacts précédents. Il peut en résulter un état où les contacts inaccessibles se trouvent dans le tableau de localisation et où les contacts plus récents (qui sont joignables) sont rejetés. Les extensions GRUU viennent pallier ce problème, mais il existe de nombreux appareils qui ne le mettent pas en œuvre.
+La solution dans ce cas, seulement si vous voulez un contact par abonné, est d'utiliser le paramètre flags de la fonction save(), avec le flag 0x04 activé, comme :
+
+            save("location", "0x04") ;
+            
+Tous les contacts précédents sont supprimés et celui de la demande d'enregistrement actuelle est enregistré dans la base de données de localisation. Cette méthode permet des réglages par abonné, certains pouvant être traités avec un seul contact et d'autres avec plusieurs contacts :
+
+            modparam("auth_db", "load_credentials", "$avp(max_contacts)=max_contacts") .....
+            if($avp(max_contacts)!=$null && $avp(max_contacts)>1) {
+            $xavp(reg=>max_contacts) = $avp(max_contacts);
+            save(“location”); } 
+            else {
+            save(“location”, “0x4”); 
+            }
+           
+ Une autre façon de fixer des limites au nombre de contacts est de récupérer tous les contacts dans des variables et de les boucler dans le fichier de configuration, exemple à montrer dans une autre sous-section.
+ 
+ TEST D'INSCRIPTION
+
+Il est parfois utile de savoir si un utilisateur est enregistré sans rien changer aux demandes SIP actuellement traitées. La fonction lookup() met à jour l'URI de la demande et ajoute des branches supplémentaires, si c'est le cas.
+Juste pour tester si un abonné est enregistré ou non, la fonction #registrar #module exports registered(table, uri). La table est le nom du stockage du service de localisation, il doit être le même que pour save(...) ou lookup(...). Le paramètre URI est optionnel et identifie l'abonné pour lequel il faut rechercher des contacts. Si le paramètre URI est manquant, l'adresse de l'URI de la requête est utilisée.
+Pour fournir un exemple pratique en plus du fichier de configuration par défaut, **nous voulons autoriser les appels uniquement des abonnés enregistrés. Par conséquent, dans la route [AUTH], après que l'appelant soit identifié, nous ajoutons la vérification pour voir si l'URI de l'en-tête From a des contacts valides dans les enregistrements de localisation :**
 
 
 
+            if( ! registered(“location”, “$fu”)) {
+                        sl_send_reply(“403”, “Forbidden - register first”);
+                        exit; 
+            }
+            #user authenticated - remove auth header
+            
+La variable $fu renvoie l'URI de l'en-tête From et la condition pour le bloc IF est vraie lorsqu'il n'y a pas de contact valide pour celui-ci (notez l'opérateur de négation).
+
+## LA RECHERCHE DE CONTACTS DANS LES VARIABLES DU FICHIER DE CONFIGURATION
+
+La fonction reg_fetch_contacts(table, uri, profil) peut être utilisée pour extraire tous les contacts de l'AoR dans le paramètre uri. Le profil est utilisé comme identifiant pour accéder aux attributs à l'intérieur de la pseudo-variable $ulc(...).
+L'exemple suivant consiste à imprimer les détails récupérés pour tous les contacts dans les enregistrements de localisation appartenant à l'expéditeur de la demande :
+
+                       if(reg_fetch_contacts("location", "$fu", "src")) {
+                        xlog("the AoR of sender:
+                        xlog("the location table name:
+                        xlog("the hash code of AoR:
+                        xlog("the number of contacts for AoR: $(ulc(src=>count))\n"); $var(i) = 0;
+                        while($var(i) < $(ulc(src=>count)))
+                        {
+                        xlog("--- counter value [$var(i)]\n");
+                        xlog("the contact address:
+                        xlog("the path headers:
+                        xlog("the received address:
+                        xlog("the value for expires:
+                        xlog("the Call-ID header:
+                        xlog("the Q priority:
+                        xlog("the CSeq value:
+                        xlog("the internal flags:
+                        xlog("the script branch flags:
+                        xlog("the User-Agent header:
+                        xlog("the local socket:
+                        xlog("the time of last update:
+                        xlog("the bitmask with supported methods: $(ulc(src=>methods)[$var(i)])\n"); 
+                        $var(i) = $var(i) + 1;
+                        } 
+                      }
+En pratique, la plupart de ce qui est associé à l'abonné dans les enregistrements du tableau de localisation est accessible via la variable pseduo $ulc(...).
+Pour fournir un autre exemple d'utilisation, le bloc suivant présente comment mettre en place des limites au nombre de contacts par abonné. Il suppose que la valeur $avp(max_contacts) est chargée à partir de la table des abonnés via le paramètre load_credentials, comme dans l'un des exemples précédents.
+
+#Check if maximum registered UA's exceeded if (reg_fetch_contacts("location", "$tu", "reg")) {
+            $var(i) = 0;
+            $var(found) = 0;
+            if($ulc(reg=>count)>0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) {
+            $var(contact) = $(ct{tobody.uri});
+            while($var(found) == 0 && $var(i) < $ulc(reg=>count)) {
+            if($var(contact)==$(ulc(reg=>addr)[$var(i)])) $var(found) = 1;
+            else
+            $var(i) = $var(i) + 1;
+            } }
+            if ($var(found) == 0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) { 
+            #check against max val
+            if($ulc(reg=>count)>=$avp(max_contacts))
+            {
+            xlog("Too Many Registrations\n"); sl_send_reply("403", "Too Many Registrations"); 
+            exit;
+            }
+            
+            } 
+           
+           }
+           
+ Tout d'abord, les contacts associés à l'URI de l'en-tête To sont récupérés dans le profil "reg" des variables $ulc(...). Si de tels contacts existent et que la requête REGISTER possède également un en-tête Contact avec adresse, alors l'URI de l'en-tête Contact est pris et comparé aux adresses des contacts de la variable $ulc(...), en utilisant l'instruction WHILE pour boucler tous les enregistrements. Si elle est trouvée, cela signifie que l'enregistrement actuel est un rafraîchissement d'un enregistrement précédent, donc il ne compte pas pour la limite, car il n'ajoute pas de nouvel enregistrement.
+Si l'adresse de contact de la requête REGISTER n'est pas trouvée, alors le nombre de contacts est testé pour voir s'il va dépasser la limite $avp(max_contacts) lorsque le nouvel enregistrement est ajouté, en rejetant l'enregistrement avec la réponse 403, si c'est le cas..
 
 
 
-
-
-
-
-
-
-   
