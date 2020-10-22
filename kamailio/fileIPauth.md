@@ -238,27 +238,28 @@ L'exemple suivant consiste à imprimer les détails récupérés pour tous les c
 En pratique, la plupart de ce qui est associé à l'abonné dans les enregistrements du tableau de localisation est accessible via la variable pseduo $ulc(...).
 Pour fournir un autre exemple d'utilisation, le bloc suivant présente comment mettre en place des limites au nombre de contacts par abonné. Il suppose que la valeur $avp(max_contacts) est chargée à partir de la table des abonnés via le paramètre load_credentials, comme dans l'un des exemples précédents.
 
-#Check if maximum registered UA's exceeded if (reg_fetch_contacts("location", "$tu", "reg")) {
-            $var(i) = 0;
-            $var(found) = 0;
-            if($ulc(reg=>count)>0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) {
-            $var(contact) = $(ct{tobody.uri});
-            while($var(found) == 0 && $var(i) < $ulc(reg=>count)) {
-            if($var(contact)==$(ulc(reg=>addr)[$var(i)])) $var(found) = 1;
-            else
-            $var(i) = $var(i) + 1;
-            } }
-            if ($var(found) == 0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) { 
-            #check against max val
-            if($ulc(reg=>count)>=$avp(max_contacts))
-            {
-            xlog("Too Many Registrations\n"); sl_send_reply("403", "Too Many Registrations"); 
-            exit;
-            }
-            
-            } 
-           
-           }
+            #Check if maximum registered UA's exceeded 
+            if (reg_fetch_contacts("location", "$tu", "reg")) {
+                        $var(i) = 0;
+                        $var(found) = 0;
+                        if($ulc(reg=>count)>0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) {
+                        $var(contact) = $(ct{tobody.uri});
+                        while($var(found) == 0 && $var(i) < $ulc(reg=>count)) {
+                        if($var(contact)==$(ulc(reg=>addr)[$var(i)])) $var(found) = 1;
+                        else
+                        $var(i) = $var(i) + 1;
+                        } }
+                        if ($var(found) == 0 && is_present_hf("Contact") && $hdr(Contact)!=”*”) { 
+                        #check against max val
+                        if($ulc(reg=>count)>=$avp(max_contacts))
+                        {
+                        xlog("Too Many Registrations\n"); sl_send_reply("403", "Too Many Registrations"); 
+                        exit;
+                        }
+
+                        } 
+
+                       }
            
  Tout d'abord, les contacts associés à l'URI de l'en-tête To sont récupérés dans le profil "reg" des variables $ulc(...). Si de tels contacts existent et que la requête REGISTER possède également un en-tête Contact avec adresse, alors l'URI de l'en-tête Contact est pris et comparé aux adresses des contacts de la variable $ulc(...), en utilisant l'instruction WHILE pour boucler tous les enregistrements. Si elle est trouvée, cela signifie que l'enregistrement actuel est un rafraîchissement d'un enregistrement précédent, donc il ne compte pas pour la limite, car il n'ajoute pas de nouvel enregistrement.
 Si l'adresse de contact de la requête REGISTER n'est pas trouvée, alors le nombre de contacts est testé pour voir s'il va dépasser la limite $avp(max_contacts) lorsque le nouvel enregistrement est ajouté, en rejetant l'enregistrement avec la réponse 403, si c'est le cas..
