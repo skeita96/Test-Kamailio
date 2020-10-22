@@ -168,12 +168,28 @@ Outre le chargement des modules registrar et usrloc et le paramétrage de ceux-c
 
 
 
+Les paramètres définis ou mentionnés pour le module #registrar sont (lignes 302-310 et 409) :
+- method_filtering - pour n'utiliser que les contacts qui annoncent le support pour une demande SIP en cours ou aucune liste de demandes supportées. Par exemple, lorsqu'un appareil annonce la prise en charge des fonctions INVITE, ACK, CANCEL et BYE dans l'en-tête du contact, si un MESSAGE est envoyé à l'abonné à l'aide de l'appareil, la demande sera traitée par le serveur SIP
+- append_branches - présenté dans le fichier de configuration sous forme de commentaire, pour permettre à l'administrateur d'activer/désactiver le #parallel #forking# à plusieurs contacts
+- max_contacts - présenté dans le fichier de configuration sous forme de commentaire, pour permettre à l'administrateur de fixer une limite globale pour le nombre de contacts par abonné
+- gruu_enabled - pour activer ou désactiver le support des extensions GRUU pour le bureau d'enregistrement et le service de localisation
+- received_avp - défini uniquement si la traversée NAT est activée, utilisé pour la communication inter-modules avec nathelper
+Les paramètres définis pour le module usrloc ne concernent que le mode de stockage persistant (lignes 343-345 et 410) :
+- db_url - défini sur le jeton DBURL, qui représente l'URL pour se connecter au serveur de base de données MySQL
+- db_mode - réglé sur 2, ce qui signifie que usrloc écrira les enregistrements dans la base de données périodiquement, sur la base d'une minuterie
+- use_domain - défini sur le jeton MULTIDOMAIN, qui contrôle si la partie domaine de l'URI doit être utilisée pour construire l'AoR interne pour les enregistrements de localisation de l'abonné
+- nat_bflag - n'est défini que si la traversée NAT est activée, en précisant quel est le drapeau brach utilisé pour marquer les contacts natted
+La route [REGISTRAR] traite les demandes de REGISTRE, étant appelée depuis le bloc request_route, après que l'abonné ait été éventuellement authentifié avec son nom d'utilisateur et son mot de passe, afin que son identité puisse être affirmée.
+Avant d'appeler la fonction save(...) pour mettre à jour les enregistrements de localisation en fonction de l'en-tête Contact et Expires du REGISTER, il existe un bloc IF qui teste si la requête vient derrière NAT et définit les drapeaux de branche qui doivent être sauvegardés dans la table de localisation.
+La fonction save(...) envoie la réponse SIP en interne, car elle doit ajouter un en-tête Contact contenant les adresses de tous les enregistrements d'emplacement valides. Elle renvoie false uniquement lorsqu'une erreur interne s'est produite, par exemple lorsqu'une réponse est envoyée depuis le fichier de configuration avec sl_reply_error().
+Le bloc de routage route [LOCATION] est exécuté dans le request_route à peu près à la fin, avant le relais. Les demandes pour les services locaux (bureau d'enregistrement ou présence) sont traitées avant, le trafic pour les réseaux SIP étrangers ou les passerelles RTPC est déjà acheminé. La dernière option pour la cible est un abonné local. Avant d'exécuter ce bloc de routage, il y a une vérification qui assure que l'URI de la requête contient un nom d'utilisateur :
 
 
-
-
-
-
+            if ($rU==$null) {
+            #request with no Username in RURI 
+            sl_send_reply("484","Address Incomplete"); 
+            exit;
+            }
 
 
 
