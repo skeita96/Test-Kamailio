@@ -425,8 +425,56 @@ Le code SQL de kamailio_cdrs() est plutôt petit, toute personne familière avec
 On peut voir qu'après avoir inséré un nouvel enregistrement dans la table cdrs, les enregistrements INVITE correspondants dans la table acc (par correspondance sur les balises Call-Id, From et To) sont mis à jour avec la valeur cdr_id. L'enregistrement INVITE ne sera plus sélectionné par la prochaine exécution de kamailio_cdrs(), celui-ci ayant un filtre sur son curseur qui inclut la condition 'cdr_id=0'.
 En utilisant Siremis, les CDRs générés peuvent être vus dans le menu administratif du SIP => Services comptables => Liste des CDRs - la vue par défaut ne montre que plusieurs attributs, pour les voir tous pour chaque enregistrement, cliquez sur la colonne Id.
 
+Notez à nouveau que les enregistrements acc apparaissent dans la table acc de la base de données car les événements se produisent avec les appels SIP et les enregistrements CDR apparaissent dans la table cdrs de la base de données périodiquement, une question de valeur pour le paramètre timer du module rtimer, donc vous devrez peut-être attendre un peu pour les voir avec Siremis.
+
+## ÉVALUATION DES CDRS
+
+Le petit moteur de notation inclus par Siremis a pour but de donner un point de départ pour construire quelque chose de plus complexe afin de répondre aux exigences spécifiques de chaque plate-forme VoIP. Il calcule uniquement les coûts des appels, sur la base de la correspondance des préfixes les plus longs, avec des règles qui peuvent être regroupées. Cela permet d'utiliser différents tarifs pour différents groupes d'abonnés.
+Les règles de tarification sont stockées dans la table de base de données billing_rates, qui comporte les colonnes décrites dans le tableau suivant :
+
+<img src="../images/sr05.png" alt="acc table">
+
+L'unité de taux ne spécifie pas une devise, étant plus ou moins une devise logique, à décider par l'administrateur de la plate-forme SIP : il peut s'agir de fractions de cents, de centimes ou d'autres unités monétaires.
+La procédure stockée kamailio_rating(...) prend comme paramètre le rate_group et sélectionne le temps et les unités de taux par la plus longue correspondance du préfixe avec le dst_username dans la table cdrs. Le code SQL de la procédure stockée est le suivant :
+
+        CREATE PROCEDURE `kamailio_rating`(`rgroup` varchar(64)) BEGIN
+        DECLARE done, rate_record, vx_cost INT DEFAULT 0; DECLARE v_cdr_id BIGINT DEFAULT 0;
+        DECLARE v_duration, v_rate_unit, v_time_unit INT DEFAULT 0; DECLARE v_dst_username VARCHAR(64);
+        DECLARE cdrs_cursor CURSOR FOR SELECT cdr_id, dst_username, duration FROM cdrs WHERE rated=0;
+        DECLARE CONTINUE HANDLER FOR SQLSTATE '02000' SET done = 1; OPEN cdrs_cursor;
+        REPEAT
+        FETCH cdrs_cursor INTO v_cdr_id, v_dst_username, v_duration; IF NOT done THEN
+        SET rate_record = 0;
+        SELECT 1, rate_unit, time_unit INTO rate_record, v_rate_unit, v_time_unit
+        FROM billing_rates
+        WHERE rate_group=rgroup AND v_dst_username LIKE concat(prefix, '%')
+        ORDER BY prefix DESC LIMIT 1; IF rate_record = 1 THEN
+        SET vx_cost = v_rate_unit * CEIL(v_duration/v_time_unit);
+        UPDATE cdrs SET rated=1, cost=vx_cost WHERE cdr_id=v_cdr_id; END IF;
+        SET done = 0;
+        END IF;
+        UNTIL done END REPEAT;
+        END
+        
+   
+Le nombre d'unités de temps à facturer est calculé en divisant la durée de l'appel par l'unité de temps. Chaque unité de temps commencée est facturée comme une unité complète - par exemple, si la durée est de 25 secondes avec une règle ayant l'unité de temps 10, alors le nombre d'unités facturables est de 3 ; à un taux d'unité 2, le coût est de 6.
+Là encore, le code SQL est très petit, sa mise à jour est triviale. Vous pouvez remarquer qu'une fois que l'enregistrement CDR est traité, sa colonne nominale est mise à 1 afin de la sauter la prochaine fois lorsque kamailio_rating() est exécuté. Le coût calculé est réinscrit dans le tableau cdrs, dans la colonne coût.
+Les taux de facturation peuvent être gérés avec Siremis au SIP Admin M enu => Accounting Services => Billing Rates List:
 
 
+<img src="../images/sr06.png" alt="acc table">
 
+## CDRS AVEC MODULE DE DIALOGUE
+
+Le module Dialog, qui est une implémentation d'un proxy à état d'appel, peut se lier au module acc et écrire un enregistrement complet des données d'appel en une seule fois. Pour cette édition du livre, ce sujet n'est pas abordé, juste listé pour vous faire savoir que c'est possible. Pour donner un point de départ pour l'instant, regardez le LISEZMOI du module acc aux paramètres qui sont préfixés par "cdr_".
+
+## REMARQUES COMPTABLES
+
+La comptabilité dans un serveur de signalisation SIP présente des avantages mais aussi des inconvénients. Nous abordons ici les plus importants :
+- le serveur n'est pas conscient du contenu des flux de médias, il n'est donc pas possible de stocker les détails du volume de données
+- pour la même raison, le serveur de signalisation SIP ne peut pas réagir en cas d'absence de RTP pour marquer la fin de l'appel
+- s'il n'est pas configuré comme un proxy à état d'appel (c'est-à-dire s'il n'utilise pas le module de dialogue), le serveur SIP ne peut pas détecter quand l'appelant ou l'appelé est parti (par exemple, en raison d'une déconnexion du réseau). Si un seul est parti, l'autre envoie généralement le BYE et le proxy est capable d'écrire l'enregistrement de fin d'appel (rappelez-vous que pour le BYE, le kamailio.cfg par défaut écrit l'enregistrement comptable même en cas d'échec de la transaction).
+- En écrivant des enregistrements pour chaque événement, les données comptables ne sont pas exposées à une perte en cas de basculement vers la haute disponibilité ou de panne du serveur SIP. Les événements de démarrage et d'arrêt peuvent être enregistrés indépendamment par différents serveurs
+- En général, la plupart des détails sont déterminés lors de l'établissement de l'appel, étant présents dans les enregistrements de l'acc INVITE. Les informations peuvent ensuite être supprimées de la mémoire, le compte BYE n'étant pertinent que pour les attributs du dialogue SIP et l'horodatage.
 
 
