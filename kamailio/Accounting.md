@@ -388,11 +388,42 @@ La procédure de stockage kamailio_cdrs() sélectionne tous les nouveaux INVITEs
 <img src="../images/sr03.png" alt="acc table">
 <img src="../images/sr04.png" alt="acc table">
 
+Il est facile de repérer par description quels attributs sont copiés à partir de la table acc, peu d'entre eux étant calculés par les procédures de stockage kamailio_cdrs() ou kamailio_rating(...).
+La durée est la soustraction entre le temps de BYE et le temps de INVITE, en ajoutant 1, car la première et la dernière seconde importent toutes les deux (ou en d'autres termes, chaque seconde commencée est comptée, ce qui donne une durée de 1 seconde si l'appel est répondu et terminé dans la même seconde). Les colonnes coût et noté sont alimentées par la procédure de stockage kamailio_rating().
+Le code SQL de kamailio_cdrs() est plutôt petit, toute personne familière avec le SQL peut l'ajuster facilement pour mieux répondre à ses propres besoins :
+
+            CREATE PROCEDURE `kamailio_cdrs`() BEGIN
+            DECLARE done INT DEFAULT 0;
+            DECLARE bye_record INT DEFAULT 0;
+            DECLARE v_src_user,v_src_domain,v_dst_user,v_dst_domain,v_dst_ouser,v_callid,
+            v_from_tag,v_to_tag,v_src_ip VARCHAR(64);
+            DECLARE v_inv_time, v_bye_time DATETIME;
+            DECLARE inv_cursor CURSOR FOR SELECT src_user, src_domain, dst_user,
+            dst_domain, dst_ouser, time, callid,from_tag, to_tag, src_ip FROM acc
+            where method='INVITE' and cdr_id='0';
+            DECLARE CONTINUE HANDLER FOR SQLSTATE '02000' SET done = 1; OPEN inv_cursor;
+            REPEAT
+            FETCH inv_cursor INTO v_src_user, v_src_domain, v_dst_user, v_dst_domain, v_dst_ouser, v_inv_time, v_callid, v_from_tag, v_to_tag, v_src_ip;
+            IF NOT done THEN
+            SET bye_record = 0;
+            SELECT 1, time INTO bye_record, v_bye_time FROM acc WHERE
+            method='BYE' AND callid=v_callid AND ((from_tag=v_from_tag AND to_tag=v_to_tag)
+            OR (from_tag=v_to_tag AND to_tag=v_from_tag))
+            ORDER BY time ASC LIMIT 1;
+            IF bye_record = 1 THEN
+            INSERT INTO cdrs (src_username,src_domain,dst_username,
+            dst_domain,dst_ousername,call_start_time,duration,sip_call_id, sip_from_tag,sip_to_tag,src_ip,created) VALUES (v_src_user,                                          v_src_domain,v_dst_user,v_dst_domain,v_dst_ouser,v_inv_time,
+            UNIX_TIMESTAMP(v_bye_time)-UNIX_TIMESTAMP(v_inv_time),
+            v_callid,v_from_tag,v_to_tag,v_src_ip,NOW());
+            UPDATE acc SET cdr_id=last_insert_id() WHERE callid=v_callid
+            AND from_tag=v_from_tag AND to_tag=v_to_tag; END IF;
+            SET done = 0; END IF;
+            UNTIL done END REPEAT;
+            END
 
 
-
-
-
+On peut voir qu'après avoir inséré un nouvel enregistrement dans la table cdrs, les enregistrements INVITE correspondants dans la table acc (par correspondance sur les balises Call-Id, From et To) sont mis à jour avec la valeur cdr_id. L'enregistrement INVITE ne sera plus sélectionné par la prochaine exécution de kamailio_cdrs(), celui-ci ayant un filtre sur son curseur qui inclut la condition 'cdr_id=0'.
+En utilisant Siremis, les CDRs générés peuvent être vus dans le menu administratif du SIP => Services comptables => Liste des CDRs - la vue par défaut ne montre que plusieurs attributs, pour les voir tous pour chaque enregistrement, cliquez sur la colonne Id.
 
 
 
