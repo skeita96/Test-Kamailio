@@ -15,5 +15,6 @@
 <li> La traversée NAT OK
 <li> RTPproxy et RTPengine 50%
 <li> Progesseion globale 40 à 50%
+ <li> facturation des appels avec Siremis 100%
 <ol/>
 
